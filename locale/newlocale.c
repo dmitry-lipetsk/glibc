@@ -45,8 +45,6 @@ __newlocale (int category_mask, const char *locale, locale_t base)
   const char *newnames[__LC_LAST];
   struct __locale_struct result;
   locale_t result_ptr;
-  char *locale_path;
-  size_t locale_path_len;
   const char *locpath_var;
   int cnt;
   size_t names_len;
@@ -90,16 +88,18 @@ __newlocale (int category_mask, const char *locale, locale_t base)
 	return NULL;
       *result_ptr = result;
 
-      goto update;
+      goto label__update;
     }
 
+ {
   /* We perhaps really have to load some data.  So we determine the
      path in which to look for the data now.  The environment variable
      `LOCPATH' must only be used when the binary has no SUID or SGID
      bit set.  If using the default path, we tell _nl_find_locale
      by passing null and it can check the canonical locale archive.  */
-  locale_path = NULL;
-  locale_path_len = 0;
+
+  char *locale_path = NULL;
+  size_t locale_path_len = 0;
 
   locpath_var = getenv ("LOCPATH");
   if (locpath_var != NULL && locpath_var[0] != '\0')
@@ -135,7 +135,7 @@ __newlocale (int category_mask, const char *locale, locale_t base)
 
 	  if (cnt == __LC_LAST)
 	    /* Bogus category name.  */
-	    ERROR_RETURN;
+	    goto label__cleanup_and_error_return;
 
 	  /* Found the category this clause sets.  */
 	  specified_mask |= 1 << cnt;
@@ -154,7 +154,7 @@ __newlocale (int category_mask, const char *locale, locale_t base)
 
       if (category_mask &~ specified_mask)
 	/* The composite name did not specify all categories we need.  */
-	ERROR_RETURN;
+	goto label__cleanup_and_error_return;
     }
 
   /* Protect global data.  */
@@ -171,7 +171,7 @@ __newlocale (int category_mask, const char *locale, locale_t base)
 						   cnt, &newnames[cnt]);
 	  if (result.__locales[cnt] == NULL)
 	    {
-	    free_cnt_data_and_exit:
+	    label__free_cnt_data_and_exit:
 	      while (cnt-- > 0)
 		if (((category_mask & 1 << cnt) != 0)
 		    && result.__locales[cnt]->usage_count != UNDELETABLE)
@@ -180,7 +180,7 @@ __newlocale (int category_mask, const char *locale, locale_t base)
 
               /* Critical section left.  */
               __libc_rwlock_unlock (__libc_setlocale_lock);
-	      return NULL;
+	      goto label__cleanup_and_return_null;
 	    }
 
 	  if (newnames[cnt] != _nl_C_name)
@@ -200,7 +200,7 @@ __newlocale (int category_mask, const char *locale, locale_t base)
   if (result_ptr == NULL)
     {
       cnt = __LC_LAST;
-      goto free_cnt_data_and_exit;
+      goto label__free_cnt_data_and_exit;
     }
 
   if (base == NULL)
@@ -258,11 +258,23 @@ __newlocale (int category_mask, const char *locale, locale_t base)
       free (base);
     }
 
+  free(locale_path);
+
   /* Critical section left.  */
   __libc_rwlock_unlock (__libc_setlocale_lock);
+  goto label__update;
+
+ label__cleanup_and_error_return:
+  free(locale_path);
+  ERROR_RETURN;
+
+ label__cleanup_and_return_null:
+  free(locale_path);
+  return NULL;
+ }
 
   /* Update the special members.  */
- update:
+ label__update:
   {
     union locale_data_value *ctypes = result_ptr->__locales[LC_CTYPE]->values;
     result_ptr->__ctype_b = (const unsigned short int *)
