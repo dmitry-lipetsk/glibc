@@ -39,7 +39,7 @@ __libc_rwlock_define (extern , __libc_setlocale_lock attribute_hidden)
 
 
 locale_t
-__newlocale (int category_mask, const char *locale, locale_t base)
+__newlocale_1 (int category_mask, const char *locale, locale_t base, char **tmp_buffer)
 {
   /* Intermediate memory for result.  */
   const char *newnames[__LC_LAST];
@@ -50,6 +50,8 @@ __newlocale (int category_mask, const char *locale, locale_t base)
   const char *locpath_var;
   int cnt;
   size_t names_len;
+
+  (*tmp_buffer) = NULL;
 
   /* We treat LC_ALL in the same way as if all bits were set.  */
   if (category_mask == 1 << LC_ALL)
@@ -111,6 +113,8 @@ __newlocale (int category_mask, const char *locale, locale_t base)
       if (__argz_add_sep (&locale_path, &locale_path_len,
 			  _nl_default_locale_path, ':') != 0)
 	return NULL;
+
+      (*tmp_buffer) = locale_path;
     }
 
   /* Get the names for the locales we are interested in.  We either
@@ -275,4 +279,21 @@ __newlocale (int category_mask, const char *locale, locale_t base)
 
   return result_ptr;
 }
+
+locale_t
+__newlocale (int category_mask, const char *locale, locale_t base)
+{
+  char* tmp_buffer = NULL;
+
+  const locale_t result = __newlocale_1(
+      category_mask,
+      locale,
+      base,
+      &tmp_buffer);
+
+  free(tmp_buffer);
+
+  return result;
+}
+
 weak_alias (__newlocale, newlocale)
